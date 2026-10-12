@@ -35,22 +35,23 @@ if(CMAKE_CROSSCOMPILING)
     message(FATAL_ERROR "pyyaml_vendor: cross build but no CMAKE_C_COMPILER / CC")
   endif()
 
-  # arch from env (harness) or the compiler's target triple (arm64 -> aarch64)
-  set(TGT_ARCH "$ENV{TGT_ARCH}")
-  if(NOT TGT_ARCH)
-    execute_process(
-      COMMAND ${CROSS_CC} -print-target-triple -c ${CMAKE_CURRENT_SOURCE_DIR}/package.xml
-      OUTPUT_VARIABLE _triple OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
-    string(REGEX REPLACE "-.*$" "" TGT_ARCH "${_triple}")
-    string(REPLACE "arm64" "aarch64" TGT_ARCH "${TGT_ARCH}")
+  # Derive the target arch from the cross compiler's own target triple
+  # (self-contained — does NOT rely on a harness-provided var). arm64 -> aarch64.
+  execute_process(
+    COMMAND ${CROSS_CC} -print-target-triple -c ${CMAKE_CURRENT_SOURCE_DIR}/package.xml
+    OUTPUT_VARIABLE _triple OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+  if(NOT _triple)
+    message(FATAL_ERROR "pyyaml_vendor: '${CROSS_CC} -print-target-triple' returned nothing")
   endif()
+  string(REGEX REPLACE "-.*$" "" PYYAML_TGT_ARCH "${_triple}")
+  string(REPLACE "arm64" "aarch64" PYYAML_TGT_ARCH "${PYYAML_TGT_ARCH}")
 
   # per-OS CPython cross naming (branch on the toolchain system name)
   if(CMAKE_SYSTEM_NAME STREQUAL "VxWorks")
-    set(PY_HOST_PLATFORM "vxworks-${TGT_ARCH}")
+    set(PY_HOST_PLATFORM "vxworks-${PYYAML_TGT_ARCH}")
     set(PY_SYSCONFIG     "_sysconfigdata__vxworks_vxworks")
   elseif(CMAKE_SYSTEM_NAME STREQUAL "QNX")
-    set(PY_HOST_PLATFORM "qnx-${TGT_ARCH}")
+    set(PY_HOST_PLATFORM "qnx-${PYYAML_TGT_ARCH}")
     set(PY_SYSCONFIG     "_sysconfigdata__qnx_qnx")
   else()
     message(FATAL_ERROR

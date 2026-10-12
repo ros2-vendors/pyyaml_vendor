@@ -25,6 +25,14 @@ endif()
 set(PYTAG "python3.${PYMIN}")
 set(PREFIX "${CMAKE_INSTALL_PREFIX}")
 
+# Target arch comes from the harness env (exported by sdkenv.sh + the Makefile),
+# NOT recomputed here. The CPython cross "host platform" is vxworks-<arch>.
+set(TGT_ARCH "$ENV{TGT_ARCH}")
+if(NOT TGT_ARCH)
+  message(FATAL_ERROR "pyyaml_vendor: TGT_ARCH not set in the environment (source sdkenv.sh / run via the harness)")
+endif()
+set(PY_HOST_PLATFORM "vxworks-${TGT_ARCH}")
+
 # The SDK "develop" tree holds the cross CPython headers + the
 # _sysconfigdata__vxworks_vxworks module that makes setup.py cross-target VxWorks.
 set(DEV "${SYSROOT}/usr/3pp/develop/usr")
@@ -47,14 +55,14 @@ externalproject_add(pyyaml_external
       "LDSHARED=wr-cc -shared"
       "CFLAGS=-I ${DEV}/include/${PYTAG} -I ${PREFIX}/include/libyaml_vendor"
       "LDFLAGS=-L ${DEV}/lib -lpython3 -L ${PREFIX}/lib -lyaml"
-      _PYTHON_HOST_PLATFORM=vxworks-x86_64
+      _PYTHON_HOST_PLATFORM=${PY_HOST_PLATFORM}
       _PYTHON_SYSCONFIGDATA_NAME=_sysconfigdata__vxworks_vxworks
       "PYTHONPATH=${DEV}/lib/${PYTAG}/:${DEV}/lib/${PYTAG}/site-packages"
       ${PYTAG} setup.py --with-libyaml bdist
   # Install the built pure-python + extension tree into the target site-packages.
   INSTALL_COMMAND ${CMAKE_COMMAND} -E make_directory ${PREFIX}/lib/${PYTAG}/site-packages
     COMMAND bash -c "cp -r <SOURCE_DIR>/lib/* ${PREFIX}/lib/${PYTAG}/site-packages/ && \
-                     cp -r <SOURCE_DIR>/build/lib.vxworks-x86_64-${PYMIN}/yaml/*.so \
+                     cp -r <SOURCE_DIR>/build/lib.${PY_HOST_PLATFORM}-${PYMIN}/yaml/*.so \
                            ${PREFIX}/lib/${PYTAG}/site-packages/yaml/ 2>/dev/null || true"
 )
 

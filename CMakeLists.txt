@@ -11,7 +11,7 @@ find_package(ament_cmake REQUIRED)
 # Works BOTH natively and cross-compiled:
 #   * native  (CMAKE_CROSSCOMPILING=OFF): plain `setup.py`, system Python/compiler.
 #   * cross   (CMAKE_CROSSCOMPILING=ON) : inject the cross-Python env (compiler from
-#     the toolchain, _PYTHON_HOST_PLATFORM + sysconfigdata selected per target OS).
+#     the toolchain, _PYTHON_HOST_PLATFORM + sysconfigdata, per target OS).
 # Nothing is hardcoded to VxWorks or a specific arch; add an elseif() for a new OS.
 
 set(PYYAML_VERSION 6.0.3)
@@ -46,26 +46,23 @@ if(CMAKE_CROSSCOMPILING)
   string(REGEX REPLACE "-.*$" "" PYYAML_TGT_ARCH "${_triple}")
   string(REPLACE "arm64" "aarch64" PYYAML_TGT_ARCH "${PYYAML_TGT_ARCH}")
 
-  # per-OS CPython cross naming (branch on the toolchain system name)
+  # per-OS CPython cross settings (branch on the toolchain system name): each OS
+  # sets its host-platform, sysconfigdata name, AND where its SDK's cross CPython
+  # headers/libs live (DEV). These are inherently OS/SDK-specific.
   if(CMAKE_SYSTEM_NAME STREQUAL "VxWorks")
     set(PY_HOST_PLATFORM "vxworks-${PYYAML_TGT_ARCH}")
     set(PY_SYSCONFIG     "_sysconfigdata__vxworks_vxworks")
-  elseif(CMAKE_SYSTEM_NAME STREQUAL "QNX")
-    set(PY_HOST_PLATFORM "qnx-${PYYAML_TGT_ARCH}")
-    set(PY_SYSCONFIG     "_sysconfigdata__qnx_qnx")
+    if(NOT DEFINED ENV{WIND_CC_SYSROOT})
+      message(FATAL_ERROR "pyyaml_vendor: VxWorks cross build but WIND_CC_SYSROOT not set")
+    endif()
+    set(DEV "$ENV{WIND_CC_SYSROOT}/usr/3pp/develop/usr")
   else()
     message(FATAL_ERROR
       "pyyaml_vendor: unsupported cross target OS '${CMAKE_SYSTEM_NAME}'. "
-      "Add an elseif() with its _PYTHON_HOST_PLATFORM + sysconfigdata name.")
+      "Add an elseif() with its _PYTHON_HOST_PLATFORM, sysconfigdata name, and DEV path.")
   endif()
 
-  set(SYSROOT "$ENV{WIND_CC_SYSROOT}")
-  if(NOT SYSROOT)
-    message(FATAL_ERROR "pyyaml_vendor: cross build but WIND_CC_SYSROOT not set")
-  endif()
-  set(DEV "${SYSROOT}/usr/3pp/develop/usr")
-
-  message(STATUS "pyyaml_vendor: CROSS os=${CMAKE_SYSTEM_NAME} arch=${TGT_ARCH} "
+  message(STATUS "pyyaml_vendor: CROSS os=${CMAKE_SYSTEM_NAME} arch=${PYYAML_TGT_ARCH} "
                  "host_platform=${PY_HOST_PLATFORM}")
 
   set(PYYAML_BUILD_ENV

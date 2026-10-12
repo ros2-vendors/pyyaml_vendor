@@ -4,32 +4,30 @@ project(pyyaml_vendor)
 
 find_package(ament_cmake REQUIRED)
 
-# PyYAML is the YAML parser/emitter Python module. Its optional C extension
-# (_yaml) links libyaml — provided by ros2's libyaml_vendor (see package.xml
-# depend). lyrical targets Ubuntu 26.04 (resolute), whose python3-yaml is
-# 6.0.3 — pin the upstream tag to match.
-#
-# PyYAML uses setuptools (not CMake), so we drive setup.py with the VxWorks
-# cross-Python env (ported from the former pkg/pyyaml 3PP) and install the
-# built module tree into the target site-packages.
+# PyYAML (YAML Python module) with its libyaml C extension (_yaml), cross-compiled
+# for VxWorks. This reproduces the exact recipe that the former pkg/pyyaml make
+# package used (verified: builds yaml/_yaml.cpython-39-vxworks.so), driven here so
+# it builds under colcon as a *_vendor. libyaml comes from ros2's libyaml_vendor
+# (see package.xml depend). Pinned to 6.0.3 to match Ubuntu 26.04 python3-yaml.
 
 set(PYYAML_VERSION 6.0.3)
 
-# These must be provided by the build harness (the vxworks mixin / sdkenv):
-#   WIND_CC_SYSROOT, ROOT_DIR (install prefix), TGT_PYTHON_MINOR
-if(NOT DEFINED ENV{WIND_CC_SYSROOT})
-  message(FATAL_ERROR "pyyaml_vendor: WIND_CC_SYSROOT not set (source sdkenv.sh)")
-endif()
+# Provided by the harness env (sdkenv.sh + top-level Makefile exports).
 set(SYSROOT "$ENV{WIND_CC_SYSROOT}")
-if(DEFINED ENV{TGT_PYTHON_MINOR})
-  set(PYMINOR "$ENV{TGT_PYTHON_MINOR}")
-else()
-  set(PYMINOR "9")
+if(NOT SYSROOT)
+  message(FATAL_ERROR "pyyaml_vendor: WIND_CC_SYSROOT not set — source sdkenv.sh")
 endif()
-set(PYTAG "python3.${PYMINOR}")
-
-# libyaml headers/lib come from the install prefix (libyaml_vendor installed them).
+if(DEFINED ENV{TGT_PYTHON_MINOR})
+  set(PYMIN "$ENV{TGT_PYTHON_MINOR}")
+else()
+  set(PYMIN "9")
+endif()
+set(PYTAG "python3.${PYMIN}")
 set(PREFIX "${CMAKE_INSTALL_PREFIX}")
+
+# The SDK "develop" tree holds the cross CPython headers + the
+# _sysconfigdata__vxworks_vxworks module that makes setup.py cross-target VxWorks.
+set(DEV "${SYSROOT}/usr/3pp/develop/usr")
 
 include(ExternalProject)
 
@@ -41,21 +39,23 @@ externalproject_add(pyyaml_external
   TIMEOUT 600
   CONFIGURE_COMMAND ""
   BUILD_IN_SOURCE TRUE
-  # Cross-build the C extension against libyaml (ported from pkg/pyyaml).
+  # Exact cross-Python env from pkg/pyyaml (CC=wr-cc, VxWorks host platform +
+  # sysconfigdata, libyaml from the install prefix), then `setup.py --with-libyaml bdist`.
   BUILD_COMMAND ${CMAKE_COMMAND} -E env
       PYTHON=${PYTAG}
       CC=wr-cc
-      "CFLAGS=-I ${SYSROOT}/usr/3pp/develop/usr/include/${PYTAG} -I ${PREFIX}/include/libyaml_vendor"
       "LDSHARED=wr-cc -shared"
-      "LDFLAGS=-L ${SYSROOT}/usr/3pp/develop/usr/lib -lpython3 -L ${PREFIX}/lib -lyaml"
+      "CFLAGS=-I ${DEV}/include/${PYTAG} -I ${PREFIX}/include/libyaml_vendor"
+      "LDFLAGS=-L ${DEV}/lib -lpython3 -L ${PREFIX}/lib -lyaml"
       _PYTHON_HOST_PLATFORM=vxworks-x86_64
       _PYTHON_SYSCONFIGDATA_NAME=_sysconfigdata__vxworks_vxworks
-      "PYTHONPATH=${SYSROOT}/usr/3pp/develop/usr/lib/${PYTAG}/:${SYSROOT}/usr/3pp/develop/usr/lib/${PYTAG}/site-packages"
-      ${PYTAG} setup.py --with-libyaml build
-  # Install the built lib/ tree into the target site-packages.
+      "PYTHONPATH=${DEV}/lib/${PYTAG}/:${DEV}/lib/${PYTAG}/site-packages"
+      ${PYTAG} setup.py --with-libyaml bdist
+  # Install the built pure-python + extension tree into the target site-packages.
   INSTALL_COMMAND ${CMAKE_COMMAND} -E make_directory ${PREFIX}/lib/${PYTAG}/site-packages
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-      <SOURCE_DIR>/lib ${PREFIX}/lib/${PYTAG}/site-packages
+    COMMAND bash -c "cp -r <SOURCE_DIR>/lib/* ${PREFIX}/lib/${PYTAG}/site-packages/ && \
+                     cp -r <SOURCE_DIR>/build/lib.vxworks-x86_64-${PYMIN}/yaml/*.so \
+                           ${PREFIX}/lib/${PYTAG}/site-packages/yaml/ 2>/dev/null || true"
 )
 
 if(BUILD_TESTING)

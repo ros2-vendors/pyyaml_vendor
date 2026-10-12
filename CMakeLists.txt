@@ -16,16 +16,17 @@ find_package(ament_cmake REQUIRED)
 
 set(PYYAML_VERSION 6.0.3)
 
-if(DEFINED ENV{TGT_PYTHON_MINOR})
-  set(PYMIN "$ENV{TGT_PYTHON_MINOR}")
-else()
-  set(PYMIN "9")
-endif()
-set(PYTAG "python3.${PYMIN}")
 set(PREFIX "${CMAKE_INSTALL_PREFIX}")
 
 if(CMAKE_CROSSCOMPILING)
   # ---- cross build: assemble the target-specific CPython env ----
+  # Python minor must come from the harness env (no guessing).
+  set(PYMIN "$ENV{TGT_PYTHON_MINOR}")
+  if(NOT PYMIN)
+    message(FATAL_ERROR "pyyaml_vendor: cross build but TGT_PYTHON_MINOR not set in the env")
+  endif()
+  set(PYTAG "python3.${PYMIN}")
+
   if(CMAKE_C_COMPILER)
     set(CROSS_CC "${CMAKE_C_COMPILER}")
   elseif(DEFINED ENV{CC})
@@ -79,6 +80,8 @@ if(CMAKE_CROSSCOMPILING)
 else()
   # ---- native build: system Python + compiler, no cross env ----
   message(STATUS "pyyaml_vendor: NATIVE build")
+  find_package(Python3 REQUIRED COMPONENTS Interpreter)
+  set(PYTAG "python3.${Python3_VERSION_MINOR}")
   set(PYYAML_BUILD_ENV "")                 # inherit the host environment
   set(PYYAML_LIB_SUBDIR "")                # native setup.py already puts .so under lib/
 endif()
